@@ -41,8 +41,12 @@ class PhysicsInformedNN():
         
         # 将数据转换为张量并加载到设备
         # requires_grad=True 是计算物理残差偏导数的关键
-        self.x_pde = torch.tensor(X_pde[:, 0:1], requires_grad=True).float().to(device)
-        self.t_pde = torch.tensor(X_pde[:, 1:2], requires_grad=True).float().to(device)
+        # self.x_pde = torch.tensor(X_pde[:, 0:1], requires_grad=True).float().to(device)
+        # self.t_pde = torch.tensor(X_pde[:, 1:2], requires_grad=True).float().to(device)
+        # self.x_pde = torch.tensor(X_pde[:, 0:1]).float().to(device).requires_grad_(True)
+        # self.t_pde = torch.tensor(X_pde[:, 1:2]).float().to(device).requires_grad_(True)
+        self.x_pde = torch.tensor(X_pde[:, 0:1]).float().to(device)
+        self.t_pde = torch.tensor(X_pde[:, 1:2]).float().to(device)
         
         self.x_ic = torch.tensor(X_ic[:, 0:1]).float().to(device)
         self.t_ic = torch.tensor(X_ic[:, 1:2]).float().to(device)
@@ -73,18 +77,36 @@ class PhysicsInformedNN():
         X = torch.cat([x, t], dim=1)
         return self.dnn(X)
 
-    def net_f(self, x, t):
+    # def net_f(self, x, t):
+    #     """使用自动微分计算偏微分方程残差 f"""
+    #     u = self.net_u(x, t)
+        
+    #     # 计算 u 对 t 和 x 的一阶偏导
+    #     u_t = torch.autograd.grad(u, t, grad_outputs=torch.ones_like(u), retain_graph=True, create_graph=True)[0]
+    #     u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), retain_graph=True, create_graph=True)[0]
+        
+    #     # 计算 u_x 对 x 的一阶偏导，即 u 对 x 的二阶偏导
+    #     u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), retain_graph=True, create_graph=True)[0]
+        
+    #     # 构造 Burgers 方程残差: f = u_t + u*u_x - nu*u_xx
+    #     f = u_t + u * u_x - self.nu * u_xx
+    #     return f
+    def net_f(self, x_in, t_in):
         """使用自动微分计算偏微分方程残差 f"""
+        # 1. 动态创建局部叶子节点，彻底阻断跨 epoch 的计算图泄漏
+        x = x_in.clone().requires_grad_(True)
+        t = t_in.clone().requires_grad_(True)
+        
         u = self.net_u(x, t)
         
-        # 计算 u 对 t 和 x 的一阶偏导
-        u_t = torch.autograd.grad(u, t, grad_outputs=torch.ones_like(u), retain_graph=True, create_graph=True)[0]
-        u_x = torch.autograd.grad(u, x, grad_outputs=torch.ones_like(u), retain_graph=True, create_graph=True)[0]
+        # 2. 使用 .sum() 触发反向传播，代码更简洁且内存更安全
+        u_t = torch.autograd.grad(u.sum(), t, create_graph=True)[0]
+        u_x = torch.autograd.grad(u.sum(), x, create_graph=True)[0]
         
-        # 计算 u_x 对 x 的一阶偏导，即 u 对 x 的二阶偏导
-        u_xx = torch.autograd.grad(u_x, x, grad_outputs=torch.ones_like(u_x), retain_graph=True, create_graph=True)[0]
+        # 3. 计算二阶导数
+        u_xx = torch.autograd.grad(u_x.sum(), x, create_graph=True)[0]
         
-        # 构造 Burgers 方程残差: f = u_t + u*u_x - nu*u_xx
+        # 4. 构造 Burgers 方程残差: f = u_t + u*u_x - nu*u_xx
         f = u_t + u * u_x - self.nu * u_xx
         return f
 
