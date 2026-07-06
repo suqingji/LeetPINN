@@ -26,7 +26,7 @@ model:
   residual: false
 optimizer:
   learning_rate: 0.001
-  epochs: 12000
+  epochs: 120
 summary:
   ckpt_dir: "./checkpoints"
   test_interval: 100
